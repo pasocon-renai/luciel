@@ -1,0 +1,17 @@
+[package]
+name = "luciel"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+burn = { version = "0.21", features = ["fusion","train","wgpu"]}
+dashmap = "6"
+file-vec = "0.1"
+image = "0.25"
+intertense = { git = "https://github.com/8000thCube/intertense.git", features = ["burn-ml"]}
+rand = "0.9"
+rmp-serde = "1"
+serde = { version = "1", features = ["derive"] }
+token-dict = { version="1.2", features = ["serial"]}
+typeid = "1"
+walkdir = "2"
