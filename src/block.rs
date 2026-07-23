@@ -1,6 +1,7 @@
 #[derive(Deserialize,Serialize)]
+#[serde(bound="")]
 /// additional attributes of Value, for serialization
-enum ValueAttribute{Loss(f32),Sync(u64)}
+enum ValueAttribute<B:Backend>{Loss(f32),Vararg(Value<B>)}
 
 enumerate_blocks!(@include_builtin Block:);
 //generic_wrapper!(unsafe @from-mut Residual<B>);
@@ -70,28 +71,52 @@ macro_rules! enumerate_blocks{
 
 impl<'a,B:Backend> Deserialize<'a> for Value<B>{
 	fn deserialize<D:Deserializer<'a>>(deserializer:D)->Result<Self,D::Error>{
-		let (data,encoding,extraattributes):(Tens<f32>,u64,Vec<ValueAttribute>)=Deserialize::deserialize(deserializer)?;
+		let (data,encoding,extraattributes):(Tens<f32>,u64,Vec<ValueAttribute<B>>)=Deserialize::deserialize(deserializer)?;
 		let device=Default::default();
 		let mut dims=[1;8];
 		let mut loss=None;
 		let rank=data.rank();
+		let mut varargs=Vec::new();
 
 		dims[8-rank..].copy_from_slice(data.dims());
 		extraattributes.into_iter().for_each(|attr|match attr{
-			ValueAttribute::Loss(l)=>loss=Some(Tensor::from_data(TensorData::new(vec![l],[1]),&device)),
-			ValueAttribute::Sync(_s)=>todo!()
+			ValueAttribute::Loss  (l)=>loss=Some(Tensor::from_data(TensorData::new(vec![l],[1]),&device)),
+			ValueAttribute::Vararg(v)=>varargs.push(v)
 		});
 
 		let count=data.count();
 		let data=Tensor::from_data(TensorData::new(data.into_flat_vec(),[count]),&device);
 
-		Ok(Self{data,dims,encoding,loss,rank})
+		Ok(Self{data,dims,encoding,loss,rank,varargs})
 	}
 }
 impl<A:AutodiffBackend<InnerBackend=B>,B:Backend,V:AutodiffModule<A,InnerModule=W>+BlockVariant<A>,W:BlockVariant<B>> AutodiffModule<A> for RecursiveVariant<V>{
 	fn from_inner(inner:Self::InnerModule)->Self{V::from_inner(*inner.0).into()}
 	fn valid(&self)->Self::InnerModule{self.0.valid().into()}
 	type InnerModule=RecursiveVariant<W>;
+}
+impl<A:AutodiffBackend<InnerBackend=B>,B:Backend> AutodiffModule<A> for Value<A>{
+	fn from_inner(inner:Self::InnerModule)->Self{
+		Self{
+			data:Tensor::from_inner(inner.data),
+			dims:inner.dims,
+			encoding:inner.encoding,
+			loss:inner.loss.map(Tensor::from_inner),
+			rank:inner.rank,
+			varargs:inner.varargs.into_iter().map(Value::from_inner).collect()
+		}
+	}
+	fn valid(&self)->Self::InnerModule{
+		Value{
+			data:self.data.valid(),
+			dims:self.dims,
+			encoding:self.encoding,
+			loss:self.loss.as_ref().map(Tensor::valid),
+			rank:self.rank,
+			varargs:self.varargs.iter().map(Value::valid).collect()
+		}
+	}
+	type InnerModule=Value<B>;
 }
 impl<B:Backend,V:BlockVariant<B>> BlockVariant<B> for RecursiveVariant<V>{
 	fn clear(&mut self){self.0.clear()}
@@ -113,7 +138,58 @@ impl<B:Backend,V:BlockVariant<B>> Module<B> for RecursiveVariant<V>{
 	fn visit<M:ModuleVisitor<B>>(&self,visitor:&mut M){self.0.visit(visitor)}
 	type Record=Self;
 }
+impl<B:Backend> Module<B> for Value<B>{
+	fn collect_devices(&self,mut devices:Vec<B::Device>)->Vec<B::Device>{
+		devices=self.data   .collect_devices(devices);
+		devices=self.loss   .collect_devices(devices);
+		devices=self.varargs.collect_devices(devices);
+		devices
+	}
+	fn fork(self,device:&B::Device)->Self{
+		Self{
+			data:self.data.fork(device),
+			dims:self.dims,
+			encoding:self.encoding,
+			loss:self.loss.fork(device),
+			rank:self.rank,
+			varargs:self.varargs.fork(device)
+		}
+	}
+	fn into_record(self)->Self::Record{self}
+	fn load_record(self,record:Self::Record)->Self{record}
+	fn map<M:ModuleMapper<B>>(self,mapper:&mut M)->Self{
+		Self{
+			data:self.data.map(mapper),
+			dims:self.dims,
+			encoding:self.encoding,
+			loss:self.loss.map(|x|x.map(mapper)),
+			rank:self.rank,
+			varargs:self.varargs.map(mapper)
+		}
+	}
+	fn to_device(self,device:&B::Device)->Self{
+		Self{
+			data:self.data.to_device(device),
+			dims:self.dims,
+			encoding:self.encoding,
+			loss:self.loss.to_device(device),
+			rank:self.rank,
+			varargs:self.varargs.to_device(device)
+		}
+	}
+	fn visit<M:ModuleVisitor<B>>(&self,visitor:&mut M){
+		self.data   .visit(visitor);
+		self.loss   .visit(visitor);
+		self.varargs.visit(visitor);
+	}
+	type Record=Self;
+}
 impl<B:Backend,V:BlockVariant<B>> Record<B> for RecursiveVariant<V>{
+	fn from_item<S:PrecisionSettings>(item:Self::Item<S>,_device:&B::Device)->Self{item}
+	fn into_item<S:PrecisionSettings>(self)->Self::Item<S>{self}
+	type Item<S:PrecisionSettings>=Self;
+}
+impl<B:Backend> Record<B> for Value<B>{
 	fn from_item<S:PrecisionSettings>(item:Self::Item<S>,_device:&B::Device)->Self{item}
 	fn into_item<S:PrecisionSettings>(self)->Self::Item<S>{self}
 	type Item<S:PrecisionSettings>=Self;
@@ -157,7 +233,8 @@ impl<B:Backend> Serialize for Value<B>{
 		let mut extraattributes=Vec::new();
 
 		data.reshape(self.dims());
-		extraattributes.extend(self.loss.as_ref().map(|l|ValueAttribute::Loss(l.clone().into_scalar().elem())));
+		extraattributes.extend(self.loss.as_ref() .map(|l|ValueAttribute::Loss(l.clone().into_scalar().elem())));
+		extraattributes.extend(self.varargs.iter().map(|v|ValueAttribute::Vararg(v.clone())));
 
 		(data,encoding,extraattributes).serialize(serializer)
 	}
@@ -176,7 +253,8 @@ impl<B:Backend> Value<B>{ // TODO needs reshape and reshape map. probably should
 			dims:self.dims,
 			encoding:self.encoding,
 			loss:self.loss.map(Tensor::detach),
-			rank:self.rank
+			rank:self.rank,
+			varargs:self.varargs.into_iter().map(Self::detach).collect()
 		}
 	}
 	/// references the dimensions
@@ -228,8 +306,9 @@ impl<B:Backend> Value<B>{ // TODO needs reshape and reshape map. probably should
 		let data=data.reshape([-1]);
 		let loss=None;
 		let rank=N;
+		let varargs=Vec::new();
 
-		Self{data,dims,encoding,loss,rank}
+		Self{data,dims,encoding,loss,rank,varargs}
 	}
 	/// set the encoding id. changing the encoding id without also mapping the data is discouraged.
 	pub fn set_encoding(&mut self,encoding:u64){self.encoding=encoding}
@@ -258,10 +337,18 @@ impl<B:Backend> Value<B>{ // TODO needs reshape and reshape map. probably should
 		let input:Tensor<B,3>=input.one_hot(inputclasses).float();
 		Self::new(input,inputencoding)
 	}
+	/// reference the variable argument list
+	pub fn varargs(&self)->&[Self]{&self.varargs}
+	/// reference the variable argument list
+	pub fn varargs_vec_mut(&mut self)->&mut Vec<Self>{&mut self.varargs}
 }
 impl<V:ModuleDisplay> ModuleDisplay for RecursiveVariant<V>{}
 impl<V:ModuleDisplayDefault> ModuleDisplayDefault for RecursiveVariant<V>{
 	fn content(&self,content:Content)->Option<Content>{self.0.content(content)}
+}
+impl<B:Backend> ModuleDisplay for Value<B>{}
+impl<B:Backend> ModuleDisplayDefault for Value<B>{
+	fn content(&self,content:Content)->Option<Content>{self.data.content(content)}
 }
 impl<V> Deref for RecursiveVariant<V>{
 	fn deref(&self)->&Self::Target{self.0.deref()}
@@ -394,9 +481,9 @@ pub struct Adjust<B:Backend>{inner:Residual<Dense<B>>}
 #[repr(transparent)]
 /// wrapper to protect recursive enum variants from compilation problems
 pub struct RecursiveVariant<V>(pub Box<V>);
-#[derive(Debug,Module)]
+#[derive(Clone,Debug)]
 /// value structure for inside a model, storing tensor data and encoding id, and possibly additional loss information
-pub struct Value<B:Backend>{data:Tensor<B,1>,dims:[usize;8],encoding:u64,loss:Option<Tensor<B,1>>,rank:usize}
+pub struct Value<B:Backend>{data:Tensor<B,1>,dims:[usize;8],encoding:u64,loss:Option<Tensor<B,1>>,rank:usize,varargs:Vec<Value<B>>}
 
 /// functions required to be a building block of our style of model
 pub trait BlockVariant<B:Backend>:Any+DeserializeOwned+Module<B>+Serialize{
@@ -411,6 +498,20 @@ pub trait BlockVariant<B:Backend>:Any+DeserializeOwned+Module<B>+Serialize{
 	}
 	/// clears the cache if supported. this has no override parents because the default does nothing
 	fn clear(&mut self){}
+	/// if placed inside a Sequential block, process the blocks in a special way. seqlo and seqhi are not inclusive of self
+	fn custom_seq_forward<V:BlockVariant<B>>(&self,input:Value<B>,n:&mut usize,seqlo:&[V],seqhi:&[V])->Value<B>{
+		let _=(seqlo,seqhi);
+		*n+=1;
+
+		self.forward(input)
+	}
+	/// if placed inside a Sequential block, process the blocks in a special way. seqlo and seqhi are not inclusive of self
+	fn custom_seq_forward_mut<V:BlockVariant<B>>(&mut self,input:Value<B>,n:&mut usize,seqlo:&mut [V],seqhi:&mut [V])->Value<B>{
+		let _=(seqlo,seqhi);
+		*n+=1;
+
+		self.forward_mut(input)
+	}
 	/// detaches the cache from autograd if supported. this has no override parents because the default does nothing
 	fn detach_cache(&mut self){}
 	/// converts to a detached block
