@@ -70,7 +70,7 @@ macro_rules! enumerate_blocks{
 
 impl<'a,B:Backend> Deserialize<'a> for Value<B>{
 	fn deserialize<D:Deserializer<'a>>(deserializer:D)->Result<Self,D::Error>{
-		let (data,encoding,extraattributes):(Intertensor<f32>,u64,Vec<ValueAttribute>)=Deserialize::deserialize(deserializer)?;
+		let (data,encoding,extraattributes):(Tens<f32>,u64,Vec<ValueAttribute>)=Deserialize::deserialize(deserializer)?;
 		let device=Default::default();
 		let mut dims=[1;8];
 		let mut loss=None;
@@ -83,7 +83,7 @@ impl<'a,B:Backend> Deserialize<'a> for Value<B>{
 		});
 
 		let count=data.count();
-		let data=Tensor::from_data(TensorData::new(data.into_flat_vec(None),[count]),&device);
+		let data=Tensor::from_data(TensorData::new(data.into_flat_vec(),[count]),&device);
 
 		Ok(Self{data,dims,encoding,loss,rank})
 	}
@@ -150,8 +150,10 @@ impl<B:Backend> BlockVariant<B> for Adjust<B>{
 }
 impl<B:Backend> Serialize for Value<B>{
 	fn serialize<S:Serializer>(&self,serializer:S)->Result<S::Ok,S::Error>{
+		let data:Tens<_>=self.data.clone().try_into().unwrap();
 		let encoding=self.encoding;
-		let mut data:Intertensor<f32>=self.data.clone().try_into().unwrap();
+
+		let mut data:Tens<f32>=data.view().map(|e|e.elem());
 		let mut extraattributes=Vec::new();
 
 		data.reshape(self.dims());
@@ -475,7 +477,7 @@ use burn::{
 	record::{PrecisionSettings,Record},
 	tensor::{IndexingUpdateOp,activation,backend::AutodiffBackend}
 };
-use intertense::builtin_tensor::Tensor as Intertensor;
+use intertense::builtin_tensor::Tens;
 use serde::{Deserialize,Deserializer,Serialize,Serializer,de::DeserializeOwned};
 use std::{
 	any::{Any,TypeId},mem,ops::{Add,Deref,DerefMut}
