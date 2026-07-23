@@ -76,16 +76,50 @@ impl<B:Backend,V:BlockVariant<B>> BlockVariant<B> for Sequential<V>{
 	fn detach_cache(&mut self){self.0.iter_mut().for_each(V::detach_cache)}
 	fn embed(&self,input:Tensor<B,2,Int>,inputclasses:usize,inputencoding:u64)->Value<B>{
 		if self.0.len()==0{return Value::unembedded(input,inputclasses,inputencoding)}
-		let input=self.0[0].embed(input,inputclasses,inputencoding);
-		self.0[1..].iter().fold(input,|x,b|b.forward(x))
+		let mut x=self.0[0].embed(input,inputclasses,inputencoding);
+
+		let mut n=1;
+		while n<self.0.len(){
+			let (seqlo,seqhi)=self.0.split_at(n);
+			let (currn,seqhi)=seqhi .split_at(1);
+
+			x=currn[0].custom_seq_forward(x,&mut n,seqlo,seqhi);
+		}
+		x
 	}
 	fn embed_mut(&mut self,input:Tensor<B,2,Int>,inputclasses:usize,inputencoding:u64)->Value<B>{
 		if self.0.len()==0{return Value::unembedded(input,inputclasses,inputencoding)}
-		let input=self.0[0].embed_mut(input,inputclasses,inputencoding);
-		self.0[1..].iter_mut().fold(input,|x,b|b.forward_mut(x))
+		let mut x=self.0[0].embed_mut(input,inputclasses,inputencoding);
+
+		let mut n=1;
+		while n<self.0.len(){
+			let (seqlo,seqhi)=self.0.split_at_mut(n);
+			let (currn,seqhi)=seqhi .split_at_mut(1);
+
+			x=currn[0].custom_seq_forward(x,&mut n,seqlo,seqhi);
+		}
+		x
 	}
-	fn forward(&self,input:Value<B>)->Value<B>{self.0.iter().fold(input,|x,b|b.forward(x))}
-	fn forward_mut(&mut self,input:Value<B>)->Value<B>{self.0.iter_mut().fold(input,|x,b|b.forward_mut(x))}
+	fn forward(&self,mut x:Value<B>)->Value<B>{
+		let mut n=0;
+		while n<self.0.len(){
+			let (seqlo,seqhi)=self.0.split_at(n);
+			let (currn,seqhi)=seqhi .split_at(1);
+
+			x=currn[0].custom_seq_forward(x,&mut n,seqlo,seqhi);
+		}
+		x
+	}
+	fn forward_mut(&mut self,mut x:Value<B>)->Value<B>{
+		let mut n=0;
+		while n<self.0.len(){
+			let (seqlo,seqhi)=self.0.split_at_mut(n);
+			let (currn,seqhi)=seqhi .split_at_mut(1);
+
+			x=currn[0].custom_seq_forward(x,&mut n,seqlo,seqhi);
+		}
+		x
+	}
 	fn supports(&self,encoding:u64)->bool{self.0.iter().map(|b|b.supports(encoding)).reduce(|x,y|x|y).unwrap_or(false)}
 	type BlockWith<C:Backend>=Sequential<V::BlockWith<C>>;
 }
