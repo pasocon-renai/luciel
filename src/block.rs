@@ -11,19 +11,19 @@ macro_rules! enumerate_blocks{
 	(@include_builtin $name:ident:$($variant:ident),*)=>(
 		enumerate_blocks!($name:AdaptBlock,Bias,BranchBlock,Cache,ClearBlock,Conv2D,Dense,Detach,DetachedBlock,Embed,EntropyBlock,Identity,LayerNorm,MaxPool2D,OnlyBlock,PositionGatedBlock,RMSNorm,RegistryBlock,Relu,ResidualBlock,SequentialBlock,SharedBlock,Tanh,UndifferentiatedBlock,UpdateBlock,$($variant,)*);
 
-		pub type AdaptBlock<B>=RecursiveVariant<Adapt<$name<B>>>;
-		pub type BranchBlock<B>=RecursiveVariant<Branch<$name<B>>>;
-		pub type ClearBlock<B>=RecursiveVariant<Clear<$name<B>>>;
-		pub type DetachedBlock<B>=RecursiveVariant<Detached<$name<B>>>;
-		pub type EntropyBlock<B>=RecursiveVariant<Entropy<$name<B>>>;
-		pub type OnlyBlock<B>=RecursiveVariant<Only<$name<B>>>;
-		pub type PositionGatedBlock<B>=RecursiveVariant<PositionGated<$name<B>>>;
-		pub type RegistryBlock<B>=RecursiveVariant<Registry<$name<B>>>;
-		pub type ResidualBlock<B>=RecursiveVariant<Residual<$name<B>>>;
-		pub type SharedBlock<B>=RecursiveVariant<Shared<$name<B>>>;
-		pub type SequentialBlock<B>=RecursiveVariant<Sequential<$name<B>>>;
+		pub type AdaptBlock           <B>=RecursiveVariant<Adapt           <$name<B>>>;
+		pub type BranchBlock          <B>=RecursiveVariant<Branch          <$name<B>>>;
+		pub type ClearBlock           <B>=RecursiveVariant<Clear           <$name<B>>>;
+		pub type DetachedBlock        <B>=RecursiveVariant<Detached        <$name<B>>>;
+		pub type EntropyBlock         <B>=RecursiveVariant<Entropy         <$name<B>>>;
+		pub type OnlyBlock            <B>=RecursiveVariant<Only            <$name<B>>>;
+		pub type PositionGatedBlock   <B>=RecursiveVariant<PositionGated   <$name<B>>>;
+		pub type RegistryBlock        <B>=RecursiveVariant<Registry        <$name<B>>>;
+		pub type ResidualBlock        <B>=RecursiveVariant<Residual        <$name<B>>>;
+		pub type SharedBlock          <B>=RecursiveVariant<Shared          <$name<B>>>;
+		pub type SequentialBlock      <B>=RecursiveVariant<Sequential      <$name<B>>>;
 		pub type UndifferentiatedBlock<B>=RecursiveVariant<Undifferentiated<$name<B>>>;
-		pub type UpdateBlock<B>=RecursiveVariant<Update<$name<B>>>;
+		pub type UpdateBlock          <B>=RecursiveVariant<Update          <$name<B>>>;
 	);
 	($name:ident:$($variant:ident,)*)=>(
 		$(impl<B:Backend> From<$variant<B>> for $name<B>{
@@ -32,6 +32,12 @@ macro_rules! enumerate_blocks{
 		impl<B:Backend> BlockVariant<B> for $name<B>{
 			fn clear(&mut self){
 				match self{$(Self::$variant(f)=>BlockVariant::clear(f)),*}
+			}
+			fn custom_seq_forward<V:BlockVariant<B>>(&self,input:Value<B>,n:&mut usize,seqlo:&[V],seqhi:&[V])->Value<B>{
+				match self{$(Self::$variant(f)=>BlockVariant::custom_seq_forward(f,input,n,seqlo,seqhi)),*}
+			}
+			fn custom_seq_forward_mut<V:BlockVariant<B>>(&mut self,input:Value<B>,n:&mut usize,seqlo:&mut [V],seqhi:&mut [V])->Value<B>{
+				match self{$(Self::$variant(f)=>BlockVariant::custom_seq_forward_mut(f,input,n,seqlo,seqhi)),*}
 			}
 			fn detach_cache(&mut self){
 				match self{$(Self::$variant(f)=>BlockVariant::detach_cache(f)),*}
@@ -50,6 +56,9 @@ macro_rules! enumerate_blocks{
 			}
 			fn forward_mut(&mut self,input:Value<B>)->Value<B>{
 				match self{$(Self::$variant(f)=>BlockVariant::forward_mut(f,input)),*}
+			}
+			fn get_variant_id(&self)->Option<u64>{
+				match self{$(Self::$variant(f)=>BlockVariant::get_variant_id(f)),*}
 			}
 			fn supports(&self,encoding:u64)->bool{
 				match self{$(Self::$variant(f)=>BlockVariant::supports(f,encoding)),*}
@@ -528,6 +537,8 @@ pub trait BlockVariant<B:Backend>:Any+DeserializeOwned+Module<B>+Serialize{
 	fn forward(&self,input:Value<B>)->Value<B>;
 	/// applies forward, allowing the mutate self such as for updating memory. override parents: forward
 	fn forward_mut(&mut self,input:Value<B>)->Value<B>{self.forward(input)}
+	/// get a unique id for the variant if supported. should be transparent through block enums
+	fn get_variant_id(&self)->Option<u64>{Self::variant_id()}
 	/// create a new dense block
 	fn new_dense(inputencoding:u64,inputdimension:usize,outputencoding:u64,outputdimension:usize)->Self where Dense<B>:Into<Self>{Dense::new(inputencoding,inputdimension,outputencoding,outputdimension).into()}
 	/// create a new embed block
@@ -566,6 +577,8 @@ pub trait BlockVariant<B:Backend>:Any+DeserializeOwned+Module<B>+Serialize{
 	fn undifferentiated(self)->Self where RecursiveVariant<Undifferentiated<Self>>:Into<Self>{RecursiveVariant::from(Undifferentiated::from(self)).into()}
 	/// wrap in a block using a recursive variant
 	fn wrapped<V:From<RecursiveVariant<Self>>>(self)->V{RecursiveVariant::from(self).into()}
+	/// get a unique id for the variant if supported. block enums should return None since the result would depend on the variant
+	fn variant_id()->Option<u64>{None}
 	/// the same type of block on another backend
 	type BlockWith<C:Backend>:BlockVariant<C,BlockWith<C>=Self::BlockWith<C>>+BlockVariant<C,BlockWith<B>=Self>;
 }
