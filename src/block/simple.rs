@@ -80,6 +80,11 @@ impl<B:Backend> BlockVariant<B> for Relu<B>{
 	fn supports(&self,_encoding:u64)->bool{true}
 	type BlockWith<C:Backend>=Relu<C>;
 }
+impl<B:Backend> BlockVariant<B> for Silu<B>{
+	fn forward(&self,input:Value<B>)->Value<B>{input.map(|input:Tensor<B,1>|activation::sigmoid(input.clone())*input,None)}
+	fn supports(&self,_encoding:u64)->bool{true}
+	type BlockWith<C:Backend>=Silu<C>;
+}
 impl<B:Backend> BlockVariant<B> for Tanh<B>{
 	fn forward(&self,input:Value<B>)->Value<B>{input.map(|input:Tensor<B,1>|input.tanh(),None)}
 	fn supports(&self,_encoding:u64)->bool{true}
@@ -205,6 +210,10 @@ impl<B:Backend> Relu<B>{
 	/// creates a componentwise relu layer
 	pub fn new()->Self{Default::default()}
 }
+impl<B:Backend> Silu<B>{
+	/// creates a componentwise silu layer
+	pub fn new()->Self{Default::default()}
+}
 impl<B:Backend> Tanh<B>{
 	/// creates a componentwise tanh layer
 	pub fn new()->Self{Default::default()}
@@ -286,6 +295,10 @@ pub struct RMSNorm<B:Backend>{
 #[repr(transparent)]
 /// a componentwise relu block. supports all encoding; wrap in Adapt or Only if that isn't desired
 pub struct Relu<B:Backend>{inner:PhantomData<B>}
+#[derive(Copy,Debug,Default,Deserialize,Module,Serialize)]
+#[repr(transparent)]
+/// a componentwise silu block. supports all encoding; wrap in Adapt or Only if that isn't desired
+pub struct Silu<B:Backend>{inner:PhantomData<B>}
 #[derive(Copy,Debug,Default,Deserialize,Module,Serialize)]
 #[repr(transparent)]
 /// a componentwise tanh block. supports all encodings; wrap in Adapt or Only if that isn't desired

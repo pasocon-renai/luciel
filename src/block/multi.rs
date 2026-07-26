@@ -10,22 +10,15 @@ impl Reduction{
 			Some(m)
 		}
 		match self{
-			&Self::Cat(dim)=>{// note: may need cat broadcast for reasons
-				let mut r=0;  // TODO refactor logic into block and call from here
+			&Self::Cat(dim)=>{
+				let mut r=0;
 				let v:Vec<Value<B>>=values.into_iter().inspect(|v|r=r.max(v.get_rank())).collect();
 
 				assert!(v.iter().is_sorted_by(|a,b|a.get_encoding()==b.get_encoding()));
 
 				if v.len()==0{return None}
 				match r{
-					1=>cat_ranked::<B,1>(v,dim),
-					2=>cat_ranked::<B,2>(v,dim),
-					3=>cat_ranked::<B,3>(v,dim),
-					4=>cat_ranked::<B,4>(v,dim),
-					5=>cat_ranked::<B,5>(v,dim),
-					6=>cat_ranked::<B,6>(v,dim),
-					7=>cat_ranked::<B,7>(v,dim),
-					8=>cat_ranked::<B,8>(v,dim),
+					1=>cat_ranked::<B,1>(v,dim),2=>cat_ranked::<B,2>(v,dim),3=>cat_ranked::<B,3>(v,dim),4=>cat_ranked::<B,4>(v,dim),5=>cat_ranked::<B,5>(v,dim),6=>cat_ranked::<B,6>(v,dim),7=>cat_ranked::<B,7>(v,dim),8=>cat_ranked::<B,8>(v,dim),
 					_=>panic!("expected rank between 1 and 8")
 				}
 			},
@@ -76,50 +69,18 @@ impl<B:Backend,V:BlockVariant<B>> BlockVariant<B> for Sequential<V>{
 	fn detach_cache(&mut self){self.0.iter_mut().for_each(V::detach_cache)}
 	fn embed(&self,input:Tensor<B,2,Int>,inputclasses:usize,inputencoding:u64)->Value<B>{
 		if self.0.len()==0{return Value::unembedded(input,inputclasses,inputencoding)}
-		let mut x=self.0[0].embed(input,inputclasses,inputencoding);
+		let x=self.0[0].embed(input,inputclasses,inputencoding);
 
-		let mut n=1;
-		while n<self.0.len(){
-			let (seqlo,seqhi)=self.0.split_at(n);
-			let (currn,seqhi)=seqhi .split_at(1);
-
-			x=currn[0].custom_seq_forward(x,&mut n,seqlo,seqhi);
-		}
-		x
+		self.0.iter().skip(1).fold(x,|x,b|b.forward(x))
 	}
 	fn embed_mut(&mut self,input:Tensor<B,2,Int>,inputclasses:usize,inputencoding:u64)->Value<B>{
 		if self.0.len()==0{return Value::unembedded(input,inputclasses,inputencoding)}
-		let mut x=self.0[0].embed_mut(input,inputclasses,inputencoding);
+		let x=self.0[0].embed_mut(input,inputclasses,inputencoding);
 
-		let mut n=1;
-		while n<self.0.len(){
-			let (seqlo,seqhi)=self.0.split_at_mut(n);
-			let (currn,seqhi)=seqhi .split_at_mut(1);
-
-			x=currn[0].custom_seq_forward(x,&mut n,seqlo,seqhi);
-		}
-		x
+		self.0.iter_mut().skip(1).fold(x,|x,b|b.forward_mut(x))
 	}
-	fn forward(&self,mut x:Value<B>)->Value<B>{
-		let mut n=0;
-		while n<self.0.len(){
-			let (seqlo,seqhi)=self.0.split_at(n);
-			let (currn,seqhi)=seqhi .split_at(1);
-
-			x=currn[0].custom_seq_forward(x,&mut n,seqlo,seqhi);
-		}
-		x
-	}
-	fn forward_mut(&mut self,mut x:Value<B>)->Value<B>{
-		let mut n=0;
-		while n<self.0.len(){
-			let (seqlo,seqhi)=self.0.split_at_mut(n);
-			let (currn,seqhi)=seqhi .split_at_mut(1);
-
-			x=currn[0].custom_seq_forward(x,&mut n,seqlo,seqhi);
-		}
-		x
-	}
+	fn forward(&self,x:Value<B>)->Value<B>{self.0.iter().fold(x,|x,b|b.forward(x))}
+	fn forward_mut(&mut self,x:Value<B>)->Value<B>{self.0.iter_mut().fold(x,|x,b|b.forward_mut(x))}
 	fn supports(&self,encoding:u64)->bool{self.0.iter().map(|b|b.supports(encoding)).reduce(|x,y|x|y).unwrap_or(false)}
 	type BlockWith<C:Backend>=Sequential<V::BlockWith<C>>;
 }

@@ -1,32 +1,22 @@
-impl ShareKey{
-	/// create a share key from the inner data
-	pub fn from_inner(generation:usize,lineage:u64,vtype:TypeId)->Self{
-		Self{generation,lineage,vtype}
-	}
-	/// get the generation number
-	pub fn get_generation(&self)->usize{self.generation}
-	/// get the lineage id
-	pub fn get_lineage(&self)->u64{self.lineage}
-	/// gets the layer associated with this key if it exists
-	pub fn get_shared<V:Any+Send>(&self)->Option<Shared<V>>{
-		let handle=Shared{inner:Err(OnceCell::new()),key:*self};
-		handle._try_upgrade_inner().map(|_|handle)
-	}
-	/// get the type id
-	pub fn get_type(&self)->TypeId{self.vtype}
-	/// create a new generation of a new lineage with the type
-	pub fn new<V>()->Self{
-		Self{
-			generation:0,
-			lineage:rand::random(),
-			vtype:typeid::of::<V>()
-		}
-	}
-	/// change type
-	pub fn with_type<V>(mut self)->Self{
-		self.vtype=typeid::of::<V>();
-		self
-	}
+impl<A:AutodiffBackend<InnerBackend=B>,B:Backend,V:AutodiffModule<A,InnerModule=W>+BlockVariant<A>,W:BlockVariant<B>> AutodiffModule<A> for Clear<V>{
+	fn from_inner(inner:Self::InnerModule)->Self{Clear(AutodiffModule::from_inner(inner.0))}
+	fn valid(&self)->Self::InnerModule{Clear(self.0.valid())}
+	type InnerModule=Clear<W>;
+}
+impl<A:AutodiffBackend<InnerBackend=B>,B:Backend,V:AutodiffModule<A,InnerModule=W>+BlockVariant<A>,W:BlockVariant<B>> AutodiffModule<A> for Registry<V>{
+	fn from_inner(inner:Self::InnerModule)->Self{Registry(AutodiffModule::from_inner(inner.0))}
+	fn valid(&self)->Self::InnerModule{Registry(self.0.valid())}
+	type InnerModule=Registry<W>;
+}
+impl<A:AutodiffBackend<InnerBackend=B>,B:Backend,V:AutodiffModule<A,InnerModule=W>+BlockVariant<A>,W:BlockVariant<B>> AutodiffModule<A> for Shared<V>{
+	fn from_inner(inner:Self::InnerModule)->Self{inner._derive(|v|V::from_inner(v.clone()),0)}
+	fn valid(&self)   ->Self::InnerModule       {self ._derive(   V::valid,0)}
+	type InnerModule=Shared<W>;
+}
+impl<A:AutodiffBackend<InnerBackend=B>,B:Backend,V:AutodiffModule<A,InnerModule=W>+BlockVariant<A>,W:BlockVariant<B>> AutodiffModule<A> for Update<V>{
+	fn from_inner(inner:Self::InnerModule)->Self{Update(AutodiffModule::from_inner(inner.0))}
+	fn valid(&self)->Self::InnerModule{Update(self.0.valid())}
+	type InnerModule=Update<W>;
 }
 impl<'a,V:Any+DeserializeOwned+Send> Deserialize<'a> for Shared<V>{
 	fn deserialize<D:Deserializer<'a>>(deserializer:D)->Result<Self,D::Error>{
@@ -49,25 +39,16 @@ impl<'a,V:Any+DeserializeOwned+Send> Deserialize<'a> for Shared<V>{
 		Ok(h)
 	}
 }
-impl<A:AutodiffBackend<InnerBackend=B>,B:Backend,V:AutodiffModule<A,InnerModule=W>+BlockVariant<A>,W:BlockVariant<B>> AutodiffModule<A> for Clear<V>{
-	fn from_inner(inner:Self::InnerModule)->Self{Clear(AutodiffModule::from_inner(inner.0))}
-	fn valid(&self)->Self::InnerModule{Clear(self.0.valid())}
-	type InnerModule=Clear<W>;
-}
-impl<A:AutodiffBackend<InnerBackend=B>,B:Backend,V:AutodiffModule<A,InnerModule=W>+BlockVariant<A>,W:BlockVariant<B>> AutodiffModule<A> for Registry<V>{
-	fn from_inner(inner:Self::InnerModule)->Self{Registry(AutodiffModule::from_inner(inner.0))}
-	fn valid(&self)->Self::InnerModule{Registry(self.0.valid())}
-	type InnerModule=Registry<W>;
-}
-impl<A:AutodiffBackend<InnerBackend=B>,B:Backend,V:AutodiffModule<A,InnerModule=W>+BlockVariant<A>,W:BlockVariant<B>> AutodiffModule<A> for Shared<V>{
-	fn from_inner(inner:Self::InnerModule)->Self{inner._derive(|v|V::from_inner(v.clone()),0)}
-	fn valid(&self)   ->Self::InnerModule       {self ._derive(   V::valid,0)}
-	type InnerModule=Shared<W>;
-}
-impl<A:AutodiffBackend<InnerBackend=B>,B:Backend,V:AutodiffModule<A,InnerModule=W>+BlockVariant<A>,W:BlockVariant<B>> AutodiffModule<A> for Update<V>{
-	fn from_inner(inner:Self::InnerModule)->Self{Update(AutodiffModule::from_inner(inner.0))}
-	fn valid(&self)->Self::InnerModule{Update(self.0.valid())}
-	type InnerModule=Update<W>;
+impl<B:Backend> BlockVariant<B> for Cache<B>{
+	fn clear(&mut self){self.inner=None}
+	fn detach_cache(&mut self){self.inner=self.inner.take().map(|x|x.detach())}
+	fn forward(&self,input:Value<B>)->Value<B>{input}
+	fn forward_mut(&mut self,input:Value<B>)->Value<B>{
+		self.inner=Some(input.clone());
+		input
+	}
+	fn supports(&self,_encoding:u64)->bool{true}
+	type BlockWith<C:Backend>=Cache<C>;
 }
 impl<B:Backend,V:BlockVariant<B>> BlockVariant<B> for Clear<V>{
 	fn forward(&self,input:Value<B>)->Value<B>{
@@ -107,6 +88,37 @@ impl<B:Backend,V:BlockVariant<B>> BlockVariant<B> for Update<V>{
 	fn forward_mut(&mut self,input:Value<B>)->Value<B>{self.0._do_layer(|layer|layer.forward_mut(input))}
 	fn supports(&self,encoding:u64)->bool{self.0._do_layer(|layer|layer.supports(encoding))}
 	type BlockWith<C:Backend>=Update<V::BlockWith<C>>;
+}
+impl<V:Any+Clone+Send> Clone for Clear<V>{
+	fn clone(&self)->Self{Self(self.0.clone())}
+}
+impl<V:Any+Clone+Send> Clone for Registry<V>{
+	fn clone(&self)->Self{Self(self.0.clone())}
+}
+impl<V:Any+Clone+Send> Clone for Shared<V>{
+	fn clone(&self)->Self{self._derive(V::clone,1)}
+}
+impl<V:Any+Clone+Send> Clone for Update<V>{
+	fn clone(&self)->Self{Self(self.0.clone())}
+}
+impl<B:Backend> From<Option<Value<B>>> for Cache<B>{
+	fn from(inner:Option<Value<B>>)->Self{
+		Self{inner}
+	}
+}
+impl<B:Backend> From<Value<B>> for Cache<B>{
+	fn from(inner:Value<B>)->Self{
+		Self{inner:Some(inner)}
+	}
+}
+impl<V:Any+Send> From<V> for Clear<V>{
+	fn from(inner:V)->Self{Self(inner.into())}
+}
+impl<V:Any+Send> From<V> for Shared<V>{
+	fn from(inner:V)->Self{Self::new(inner)}
+}
+impl<V:Any+Send> From<V> for Update<V>{
+	fn from(inner:V)->Self{Self(inner.into())}
 }
 impl<B:Backend,V:BlockVariant<B>> Module<B> for Clear<V>{
 	fn collect_devices(&self,devices:Vec<B::Device>)->Vec<B::Device>{self.0.collect_devices(devices)}
@@ -173,51 +185,6 @@ impl<B:Backend,V:BlockVariant<B>> Module<B> for Update<V>{
 	fn visit<M:ModuleVisitor<B>>(&self,visitor:&mut M){self.0.visit(visitor)}
 	type Record=<(Option<V>,usize,u64) as Module<B>>::Record;
 }
-impl<B:Backend> BlockVariant<B> for Cache<B>{
-	fn clear(&mut self){self.inner=None}
-	fn detach_cache(&mut self){self.inner=self.inner.take().map(|x|x.detach())}
-	fn forward(&self,input:Value<B>)->Value<B>{input}
-	fn forward_mut(&mut self,input:Value<B>)->Value<B>{
-		self.inner=Some(input.clone());
-		input
-	}
-	fn supports(&self,_encoding:u64)->bool{true}
-	type BlockWith<C:Backend>=Cache<C>;
-}
-impl<B:Backend> Cache<B>{
-	/// get a clone of the inner value
-	pub fn get_inner(&self)->Option<Value<B>>{self.inner.clone()}
-	/// reference the inner value
-	pub fn inner(&self)->&Option<Value<B>>{&self.inner}
-	/// reference the inner value
-	pub fn inner_mut(&mut self)->&mut Option<Value<B>>{&mut self.inner}
-	/// convert into the inner value
-	pub fn into_inner(self)->Option<Value<B>>{self.inner}
-	/// create a new empty cache. use from(value) to create with an existing value inside
-	pub fn new()->Self{
-		Self{inner:None}
-	}
-}
-impl<B:Backend> From<Option<Value<B>>> for Cache<B>{
-	fn from(inner:Option<Value<B>>)->Self{
-		Self{inner}
-	}
-}
-impl<B:Backend> From<Value<B>> for Cache<B>{
-	fn from(inner:Value<B>)->Self{Some(inner).into()}
-}
-impl<V:Any+Clone+Send> Clone for Clear<V>{
-	fn clone(&self)->Self{Self(self.0.clone())}
-}
-impl<V:Any+Clone+Send> Clone for Registry<V>{
-	fn clone(&self)->Self{Self(self.0.clone())}
-}
-impl<V:Any+Clone+Send> Clone for Shared<V>{
-	fn clone(&self)->Self{self._derive(V::clone,1)}
-}
-impl<V:Any+Clone+Send> Clone for Update<V>{
-	fn clone(&self)->Self{Self(self.0.clone())}
-}
 impl<V:Any+ModuleDisplay+Send> ModuleDisplay for Clear<V>{}
 impl<V:Any+ModuleDisplay+Send> ModuleDisplay for Registry<V>{}
 impl<V:Any+ModuleDisplay+Send> ModuleDisplay for Shared<V>{}
@@ -251,20 +218,26 @@ impl<V:Any+Send+Serialize> Serialize for Shared<V>{
 		(self.inner.as_ref().cloned().ok(),self.key.generation,self.key.lineage^RELINE.get()).serialize(serializer)
 	}
 }
+
+impl<B:Backend> Cache<B>{
+	/// get a clone of the inner value
+	pub fn get_inner(&self)->Option<Value<B>>{self.inner.clone()}
+	/// reference the inner value
+	pub fn inner(&self)->&Option<Value<B>>{&self.inner}
+	/// reference the inner value
+	pub fn inner_mut(&mut self)->&mut Option<Value<B>>{&mut self.inner}
+	/// convert into the inner value
+	pub fn into_inner(self)->Option<Value<B>>{self.inner}
+	/// create a new empty cache. use from(value) to create with an existing value inside
+	pub fn new()->Self{
+		Self{inner:None}
+	}
+}
 impl<V:Any+Send> Clear<V>{
 	/// create another non primary share with the same key
 	pub fn share(&self)->Self{Self(self.0.share())}
 	/// create another share with the same key, then swap it with self before returning, effectively taking the primary status of self and putting it in the returned value, leaving self non primary
 	pub fn share_swap(&mut self)->Self{Self(self.0.share_swap())}
-}
-impl<V:Any+Send> From<V> for Clear<V>{
-	fn from(inner:V)->Self{Self(inner.into())}
-}
-impl<V:Any+Send> From<V> for Shared<V>{
-	fn from(inner:V)->Self{Self::new(inner)}
-}
-impl<V:Any+Send> From<V> for Update<V>{
-	fn from(inner:V)->Self{Self(inner.into())}
 }
 impl<V:Any+Send> Shared<V>{
 	/// derive a model from a reference
@@ -398,12 +371,42 @@ impl<V> Drop for Shared<V>{
 	}
 }
 
-/// make a clone of a model such that its shared layers have the same share pattern but with new lineages independent of the original. This function relies on thread local random number generation in a way that assumes clone implementations are single threaded, but it should still work so long as the Shares themselves are cloned by the calling thread.
-pub fn break_lineage<V:Clone+Send>(module:impl AsRef<V>)->V{
+impl ShareKey{
+	/// create a share key from the inner data
+	pub fn from_inner(generation:usize,lineage:u64,vtype:TypeId)->Self{
+		Self{generation,lineage,vtype}
+	}
+	/// get the generation number
+	pub fn get_generation(&self)->usize{self.generation}
+	/// get the lineage id
+	pub fn get_lineage(&self)->u64{self.lineage}
+	/// gets the layer associated with this key if it exists
+	pub fn get_shared<V:Any+Send>(&self)->Option<Shared<V>>{
+		let handle=Shared{inner:Err(OnceCell::new()),key:*self};
+		handle._try_upgrade_inner().map(|_|handle)
+	}
+	/// get the type id
+	pub fn get_type(&self)->TypeId{self.vtype}
+	/// create a new generation of a new lineage with the type
+	pub fn new<V>()->Self{
+		Self{
+			generation:0,
+			lineage:rand::random(),
+			vtype:typeid::of::<V>()
+		}
+	}
+	/// change type
+	pub fn with_type<V>(mut self)->Self{
+		self.vtype=typeid::of::<V>();
+		self
+	}
+}
+/// make a clone of a model such that its shared layers have the same share pattern but with new lineages independent of the original. This function relies on thread local behavior, and in the highly unusual case of a multithreaded clone impl only shares on the calling thread will actually break lineage.
+pub fn break_lineage<V:Clone+Send>(module:&V)->V{
 	let reset=RELINE.get();
 	RELINE.set(rand::random());
 
-	let result=module.as_ref().clone();
+	let result=module.clone();
 	RELINE.set(reset);
 
 	result
