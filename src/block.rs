@@ -16,7 +16,7 @@ enumerate_blocks!(@include_builtin Block:);
 /// generates an enum of blocks and implements BlockVariant and Module traits by delegating each function to the inner variant. Variants must implement BlockVariant, and have a single generic argument representing the backend type. usage: enumerate_blocks!(MyBlock:Variant0,Variant1,Variant2...), or to automatically include all builtin block variants, enumerate_blocks!(@include_builtin MyBlock:Variant0,Variant1,Variant2...);
 macro_rules! enumerate_blocks{
 	(@include_builtin $name:ident:$($variant:ident),*)=>(
-		enumerate_blocks!($name:AdaptBlock,Bias,BranchBlock,Cache,ClearBlock,Conv2D,Dense,Detach,DetachedBlock,Embed,Identity,LayerNorm,MaxPool2D,OnlyBlock,RMSNorm,RegistryBlock,Relu,ResidualBlock,SequentialBlock,SharedBlock,Silu,Tanh,UndifferentiatedBlock,UpdateBlock,$($variant,)*);
+		enumerate_blocks!($name:AdaptBlock,Bias,BranchBlock,Cache,ClearBlock,Conv2D,Dense,Detach,DetachedBlock,Embed,Identity,LayerNorm,MaxPool2D,OnlyBlock,RMSNorm,RegistryBlock,Relu,ResidualBlock,SequentialBlock,SharedBlock,Silu,Tanh,UndifferentiatedBlock,UpdateBlock$(,$variant)*);
 
 		pub type AdaptBlock           <B>=RecursiveVariant<Adapt           <$name<B>>>;
 		pub type BranchBlock          <B>=RecursiveVariant<Branch          <$name<B>>>;
@@ -30,7 +30,7 @@ macro_rules! enumerate_blocks{
 		pub type UndifferentiatedBlock<B>=RecursiveVariant<Undifferentiated<$name<B>>>;
 		pub type UpdateBlock          <B>=RecursiveVariant<Update          <$name<B>>>;
 	);
-	($name:ident:$($variant:ident,)*)=>(
+	($name:ident:$($variant:ident),*)=>(
 		$(impl<B:Backend> From<$variant<B>> for $name<B>{
 			fn from(value:$variant<B>)->Self{Self::$variant(value)}
 		})*
@@ -101,9 +101,13 @@ impl<B:Backend,V:BlockVariant<B>> BlockVariant<B> for RecursiveVariant<V>{
 	fn detach_cache(&mut self){self.0.detach_cache()}
 	fn embed(&self,input:Tensor<B,2,Int>,inputclasses:usize,inputencoding:u64)->Value<B>{self.0.embed(input,inputclasses,inputencoding)}
 	fn embed_mut(&mut self,input:Tensor<B,2,Int>,inputclasses:usize,inputencoding:u64)->Value<B>{self.0.embed_mut(input,inputclasses,inputencoding)}
+	fn encoding_hint(&self)->Option<u64>{self.0.encoding_hint()}
 	fn forward(&self,input:Value<B>)->Value<B>{self.0.forward(input)}
 	fn forward_mut(&mut self,input:Value<B>)->Value<B>{self.0.forward_mut(input)}
+	fn get_variant_id(&self)->Option<u64>{self.0.get_variant_id()}
 	fn supports(&self,encoding:u64)->bool{self.0.supports(encoding)}
+	fn tokenizer_hint(&self)->Option<TokenDict>{self.0.tokenizer_hint()}
+	fn variant_id()->Option<u64>{V::variant_id()}
 	type BlockWith<C:Backend>=RecursiveVariant<V::BlockWith<C>>;
 }
 impl<B:Backend,V:BlockVariant<B>> Module<B> for RecursiveVariant<V>{
@@ -149,6 +153,13 @@ impl<V> From<V> for RecursiveVariant<V>{
 impl<V:ModuleDisplay> ModuleDisplay for RecursiveVariant<V>{}
 impl<V:ModuleDisplayDefault> ModuleDisplayDefault for RecursiveVariant<V>{
 	fn content(&self,content:Content)->Option<Content>{self.0.content(content)}
+}
+impl<B:Backend> Mul<f32> for Value<B>{
+	fn mul(mut self,rhs:f32)->Self{
+		self.data=self.data*rhs;
+		self
+	}
+	type Output=Value<B>;
 }
 impl<B:Backend,V:BlockVariant<B>> Record<B> for RecursiveVariant<V>{
 	fn from_item<S:PrecisionSettings>(item:Self::Item<S>,_device:&B::Device)->Self{item}
@@ -286,7 +297,7 @@ impl<B:Backend> Value<B>{ // TODO needs reshape and reshape map. probably should
 	}
 }
 
-/// applies rotary position encoding according to the indices. dims: angles=[features/(2*space)], input=[d.., features], position=[d.., space], output=[d.., features]
+/// applies rotary position encoding according to the indices. dims: angles: [features/(2*space)], input: [.., features], position: [.., space], output: [.., features]
 pub fn index_rotary<B:Backend,const D:usize>(angles:Tensor<B,1>,input:Tensor<B,D>,position:Tensor<B,D>)->Tensor<B,D>{
 	let angledim    =angles  .dims()[0];
 	let device=input.device();
@@ -433,6 +444,14 @@ pub trait BlockVariant<B:Backend>:Any+DeserializeOwned+Module<B>+Serialize{
 	fn new_identity()->Self where Identity<B>:Into<Self>{Identity::new().into()}
 	/// create a new registry of primary shares
 	fn new_registry<I:IntoIterator<Item=Shared<Self>>>(shares:I)->Self where RecursiveVariant<Registry<Self>>:Into<Self>{RecursiveVariant::from(Registry(shares.into_iter().collect())).into()}
+	/// create a new relu block
+	fn new_relu()->Self where Relu<B>:Into<Self>{Relu::new().into()}
+	/// create a new silu block
+	fn new_silu()->Self where Silu<B>:Into<Self>{Silu::new().into()}
+	/// create a new tanh block
+	fn new_tanh()->Self where Tanh<B>:Into<Self>{Tanh::new().into()}
+	/// creata a new only block
+	fn only(self,inputencoding:u64,outputencoding:impl Into<Option<u64>>)->Self where RecursiveVariant<Only<Self>>:Into<Self>{RecursiveVariant::from(Only::new(self,inputencoding).with_output_encoding(outputencoding)).into()}
 	/// converts into a residual block
 	fn residual(self)->Self where RecursiveVariant<Residual<Self>>:Into<Self>{RecursiveVariant::from(Residual(self)).into()}
 	/// converts into a shuffle blocks
@@ -478,6 +497,6 @@ use burn::{
 use intertense::builtin_tensor::Tens;
 use serde::{Deserialize,Deserializer,Serialize,Serializer,de::DeserializeOwned};
 use std::{
-	any::{Any,TypeId},mem,ops::{Add,Deref,DerefMut,Sub}
+	any::{Any,TypeId},mem,ops::{Add,Deref,DerefMut,Mul,Sub}
 };
 use token_dict::TokenDict;

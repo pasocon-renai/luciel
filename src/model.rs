@@ -67,12 +67,6 @@ impl<B:Backend,V:BlockVariant<B>> Model<B,V>{
 
 		Some(self.blocks.embed_mut(input,inputclasses,inputencoding))
 	}
-	pub fn get_tokenizer(&self)->TokenDict{self.tokenizer.clone()}
-	/// apply inference to the input value
-	pub fn infer(&mut self,input:Value<B>)->Value<B>{
-		self.do_prompt();
-		self.blocks.forward_mut(input)
-	}
 	/// convert from a sequential block. note that while putting a block enum that is Into<Sequential<V>> in here is allowed, the variant type may remain wrapped even if that block enum wraps a Sequential<V>
 	pub fn from_block<K:Into<Sequential<V>>>(block:K,encoding:u64,tokenizer:TokenDict)->Self{
 		Self{
@@ -82,6 +76,12 @@ impl<B:Backend,V:BlockVariant<B>> Model<B,V>{
 			prompt:Vec::new(),
 			tokenizer
 		}
+	}
+	pub fn get_tokenizer(&self)->TokenDict{self.tokenizer.clone()}
+	/// apply inference to the input value
+	pub fn infer(&mut self,input:Value<B>)->Value<B>{
+		self.do_prompt();
+		self.blocks.forward_mut(input)
 	}
 	/// convert into a sequential block. the return type is generic to allow either getting a block enum or a raw Sequential<V>
 	pub fn into_block<K:From<RecursiveVariant<Sequential<V>>>>(self)->K{RecursiveVariant::from(self.blocks).into()}
