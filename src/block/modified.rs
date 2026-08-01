@@ -103,7 +103,7 @@ impl<B:Backend,V:BlockVariant<B>> BlockVariant<B> for Only<V>{
 		let prior=Value::unembedded(input.clone(),inputclasses,inputencoding);
 
 		if !self.supports(inputencoding){return prior}
-		let mut output=self.inner.embed(input,inputclasses,inputencoding);
+		let mut output=self.inner.embed_mut(input,inputclasses,inputencoding);
 
 		if let Some(outputencoding)=self.outputencoding{output.set_encoding(outputencoding)}
 		output
