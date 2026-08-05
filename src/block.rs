@@ -11,7 +11,6 @@ pub struct RecursiveVariant<V>(pub Box<V>);
 pub struct Value<B:Backend>{data:Tensor<B,1>,dims:[usize;8],encoding:u64,loss:Option<Tensor<B,1>>,rank:usize}
 
 enumerate_blocks!(@include_builtin Block:);
-//generic_wrapper!(unsafe @from-mut Residual<B>);
 #[macro_export]
 /// generates an enum of blocks and implements BlockVariant and Module traits by delegating each function to the inner variant. Variants must implement BlockVariant, and have a single generic argument representing the backend type. usage: enumerate_blocks!(MyBlock:Variant0,Variant1,Variant2...), or to automatically include all builtin block variants, enumerate_blocks!(@include_builtin MyBlock:Variant0,Variant1,Variant2...);
 macro_rules! enumerate_blocks{

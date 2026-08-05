@@ -5,6 +5,13 @@ impl<B:Backend,const N:usize> Deref for SerialFloatTensor<B,N>{
 impl<B:Backend,const N:usize> DerefMut for SerialFloatTensor<B,N>{
 	fn deref_mut(&mut self)->&mut Self::Target{&mut self.inner}
 }
+impl<B:Backend,const N:usize> Deref for SerialIntTensor<B,N>{
+	fn deref(&self)->&Self::Target{&self.inner}
+	type Target=Tensor<B,N,Int>;
+}
+impl<B:Backend,const N:usize> DerefMut for SerialIntTensor<B,N>{
+	fn deref_mut(&mut self)->&mut Self::Target{&mut self.inner}
+}
 impl<B:Backend> Deref for SerialLinear<B>{
 	fn deref(&self)->&Self::Target{&self.inner}
 	type Target=Linear<B>;
@@ -265,6 +272,14 @@ impl<B:Backend,const N:usize> From<Tensor<B,N>> for SerialFloatTensor<B,N>{
 		Self{inner}
 	}
 }
+impl<B:Backend,const N:usize> From<SerialIntTensor<B,N>> for Tensor<B,N,Int>{
+	fn from(tensor:SerialIntTensor<B,N>)->Self{tensor.inner}
+}
+impl<B:Backend,const N:usize> From<Tensor<B,N,Int>> for SerialIntTensor<B,N>{
+	fn from(inner:Tensor<B,N,Int>)->Self{
+		Self{inner}
+	}
+}
 impl<B:Backend> From<Linear<B>> for SerialLinear<B>{
 	fn from(inner:Linear<B>)->Self{
 		Self{inner}
@@ -428,6 +443,15 @@ pub struct SerialFloatTensor<B:Backend,const N:usize>{
 	#[serde(deserialize_with="deserialize_float_tensor")]
 	#[serde(serialize_with="serialize_float_tensor")]
 	pub inner:Tensor<B,N>
+}
+#[derive(Debug,Deserialize,Module,Serialize)]
+#[repr(transparent)]
+#[serde(bound="")]
+/// wrapper to make tensors more conveniently serializable. They will be stored as tensor data and loaded with the default device
+pub struct SerialIntTensor<B:Backend,const N:usize>{
+	#[serde(deserialize_with="deserialize_int_tensor")]
+	#[serde(serialize_with="serialize_int_tensor")]
+	pub inner:Tensor<B,N,Int>
 }
 #[derive(Debug,Deserialize,Module,Serialize)]
 #[repr(transparent)]
