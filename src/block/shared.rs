@@ -18,6 +18,18 @@ impl<A:AutodiffBackend<InnerBackend=B>,B:Backend,V:AutodiffModule<A,InnerModule=
 	fn valid(&self)->Self::InnerModule{Update(self.0.valid())}
 	type InnerModule=Update<W>;
 }
+impl<V:Any+Default+Send> Default for Clear<V>{
+	fn default()->Self{Self(Shared::default())}
+}
+impl<V:Any+Send> Default for Registry<V>{
+	fn default()->Self{Self(Vec::new())}
+}
+impl<V:Any+Default+Send> Default for Shared<V>{
+	fn default()->Self{Self::new(V::default())}
+}
+impl<V:Any+Default+Send> Default for Update<V>{
+	fn default()->Self{Self(Shared::default())}
+}
 impl<'a,V:Any+DeserializeOwned+Send> Deserialize<'a> for Shared<V>{
 	fn deserialize<D:Deserializer<'a>>(deserializer:D)->Result<Self,D::Error>{
 		let (inner,generation,lineage):(Option<Arc<Mutex<V>>>,usize,u64)=Deserialize::deserialize(deserializer)?;
@@ -316,6 +328,8 @@ impl<V:Any+Send> Shared<V>{
 	pub fn and_update(self)->Update<V>{Update(self)}
 	/// creates a new shared cache. convert a share to a clear to clear the cache on forward, and update to update the cache on forward
 	pub fn cache<B:Backend>()->Self where V:From<Cache<B>>{Self::new(Cache::new().into())}
+	/// edit the inner shared layer using interior mutability. note that if deserialized this requires the deserialization to be complete.
+	pub fn edit<F:FnOnce(&mut V)>(&mut self,f:F){f(&mut *self._upgrade_inner().lock().unwrap())}
 	/// get the share key
 	pub fn get_key(&self)->ShareKey{self.key}
 	/// make this share a primary share of its key. For correct map/visit/serial behavior, exactly one primary share should be included with each model, so this shouldn't be used unless a reference to the layer needs outside for serialization or something. Primary share status is preserved when cloning

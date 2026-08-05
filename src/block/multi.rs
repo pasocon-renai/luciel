@@ -1,32 +1,3 @@
-impl Reduction{
-	pub fn apply<B:Backend>(&self,values:impl IntoIterator<Item=Value<B>>)->Option<Value<B>>{
-		fn cat_ranked<B:Backend,const N:usize>(meow:Vec<Value<B>>,dim:impl TryInto<isize>)->Option<Value<B>>{
-			let dim=dim.try_into().map(|d|if d<0{N-(-d) as usize}else{d as usize}).ok().filter(|&d|d<N).expect("dim must be >=-N and <N");
-			let encoding=meow.first()?.get_encoding();
-			let loss=meow.iter().filter_map(Value::get_loss).reduce(|x,y|x+y);
-			let mut m=Value::new(Tensor::cat(meow.into_iter().map(|x|x.get_data::<N>()).collect(),dim),encoding);
-
-			if let Some(l)=loss{m.add_loss(l)}
-			Some(m)
-		}
-		match self{
-			&Self::Cat(dim)=>{
-				let mut r=0;
-				let v:Vec<Value<B>>=values.into_iter().inspect(|v|r=r.max(v.get_rank())).collect();
-
-				assert!(v.iter().is_sorted_by(|a,b|a.get_encoding()==b.get_encoding()));
-
-				if v.len()==0{return None}
-				match r{
-					1=>cat_ranked::<B,1>(v,dim),2=>cat_ranked::<B,2>(v,dim),3=>cat_ranked::<B,3>(v,dim),4=>cat_ranked::<B,4>(v,dim),5=>cat_ranked::<B,5>(v,dim),6=>cat_ranked::<B,6>(v,dim),7=>cat_ranked::<B,7>(v,dim),8=>cat_ranked::<B,8>(v,dim),
-					_=>panic!("expected rank between 1 and 8")
-				}
-			},
-			Self::First=>values.into_iter().next(),
-			Self::Sum=>values.into_iter().reduce(|x,y|x+y)
-		}
-	}
-}
 impl<A:AutodiffBackend<InnerBackend=B>,B:Backend,V:AutodiffModule<A,InnerModule=W>+BlockVariant<A>,W:BlockVariant<B>> AutodiffModule<A> for Branch<V>{
 	fn from_inner(inner:Self::InnerModule)->Self{
 		Branch{blocks:AutodiffModule::from_inner(inner.blocks),reduction:inner.reduction}
@@ -84,16 +55,6 @@ impl<B:Backend,V:BlockVariant<B>> BlockVariant<B> for Sequential<V>{
 	fn supports(&self,encoding:u64)->bool{self.0.iter().map(|b|b.supports(encoding)).reduce(|x,y|x|y).unwrap_or(false)}
 	type BlockWith<C:Backend>=Sequential<V::BlockWith<C>>;
 }
-impl<B:Backend,V:BlockVariant<B>> Module<B> for Sequential<V>{
-	fn collect_devices(&self,devices:Vec<B::Device>)->Vec<B::Device>{self.0.collect_devices(devices)}
-	fn fork(self,device:&B::Device)->Self{Self(self.0.fork(device))}
-	fn into_record(self)->Self::Record{self.0.into_record()}
-	fn load_record(self,record:Self::Record)->Self{Self(self.0.load_record(record))}
-	fn map<M:ModuleMapper<B>>(self,mapper:&mut M)->Self{Self(self.0.map(mapper))}
-	fn to_device(self,device:&B::Device)->Self{Self(self.0.to_device(device))}
-	fn visit<M:ModuleVisitor<B>>(&self,visitor:&mut M){self.0.visit(visitor)}
-	type Record=<Vec<V> as Module<B>>::Record;
-}
 impl<B:Backend,V:BlockVariant<B>> Module<B> for Branch<V>{
 	fn collect_devices(&self,devices:Vec<B::Device>)->Vec<B::Device>{self.blocks.collect_devices(devices)}
 	fn fork(mut self,device:&B::Device)->Self{
@@ -118,6 +79,16 @@ impl<B:Backend,V:BlockVariant<B>> Module<B> for Branch<V>{
 	}
 	type Record=<Vec<V> as Module<B>>::Record;
 }
+impl<B:Backend,V:BlockVariant<B>> Module<B> for Sequential<V>{
+	fn collect_devices(&self,devices:Vec<B::Device>)->Vec<B::Device>{self.0.collect_devices(devices)}
+	fn fork(self,device:&B::Device)->Self{Self(self.0.fork(device))}
+	fn into_record(self)->Self::Record{self.0.into_record()}
+	fn load_record(self,record:Self::Record)->Self{Self(self.0.load_record(record))}
+	fn map<M:ModuleMapper<B>>(self,mapper:&mut M)->Self{Self(self.0.map(mapper))}
+	fn to_device(self,device:&B::Device)->Self{Self(self.0.to_device(device))}
+	fn visit<M:ModuleVisitor<B>>(&self,visitor:&mut M){self.0.visit(visitor)}
+	type Record=<Vec<V> as Module<B>>::Record;
+}
 impl<V:ModuleDisplay> ModuleDisplay for Branch<V>{}
 impl<V:ModuleDisplay> ModuleDisplay for Sequential<V>{}
 impl<V:ModuleDisplay> ModuleDisplayDefault for Branch<V>{
@@ -134,6 +105,36 @@ impl<V> From<RecursiveVariant<Sequential<V>>> for Sequential<V>{
 }
 impl<V> From<Vec<V>> for Sequential<V>{
 	fn from(inner:Vec<V>)->Self{Self(inner)}
+}
+
+impl Reduction{
+	pub fn apply<B:Backend>(&self,values:impl IntoIterator<Item=Value<B>>)->Option<Value<B>>{
+		fn cat_ranked<B:Backend,const N:usize>(meow:Vec<Value<B>>,dim:impl TryInto<isize>)->Option<Value<B>>{
+			let dim=dim.try_into().map(|d|if d<0{N-(-d) as usize}else{d as usize}).ok().filter(|&d|d<N).expect("dim must be >=-N and <N");
+			let encoding=meow.first()?.get_encoding();
+			let loss=meow.iter().filter_map(Value::get_loss).reduce(|x,y|x+y);
+			let mut m=Value::new(Tensor::cat(meow.into_iter().map(|x|x.get_data::<N>()).collect(),dim),encoding);
+
+			if let Some(l)=loss{m.add_loss(l)}
+			Some(m)
+		}
+		match self{
+			&Self::Cat(dim)=>{
+				let mut r=0;
+				let v:Vec<Value<B>>=values.into_iter().inspect(|v|r=r.max(v.get_rank())).collect();
+
+				assert!(v.iter().is_sorted_by(|a,b|a.get_encoding()==b.get_encoding()));
+
+				if v.len()==0{return None}
+				match r{
+					1=>cat_ranked::<B,1>(v,dim),2=>cat_ranked::<B,2>(v,dim),3=>cat_ranked::<B,3>(v,dim),4=>cat_ranked::<B,4>(v,dim),5=>cat_ranked::<B,5>(v,dim),6=>cat_ranked::<B,6>(v,dim),7=>cat_ranked::<B,7>(v,dim),8=>cat_ranked::<B,8>(v,dim),
+					_=>panic!("expected rank between 1 and 8")
+				}
+			},
+			Self::First=>values.into_iter().next(),
+			Self::Sum=>values.into_iter().reduce(|x,y|x+y)
+		}
+	}
 }
 
 #[derive(Clone,Copy,Debug,Default,Deserialize,Serialize)]

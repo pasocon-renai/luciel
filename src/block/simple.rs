@@ -26,6 +26,11 @@ impl<B:Backend> BlockVariant<B> for Dense<B>{
 	fn supports(&self,encoding:u64)->bool{encoding==self.inputencoding}
 	type BlockWith<C:Backend>=Dense<C>;
 }
+impl<B:Backend> BlockVariant<B> for Detach<B>{
+	fn forward(&self,input:Value<B>)->Value<B>{input.detach()}
+	fn supports(&self,_encoding:u64)->bool{true}
+	type BlockWith<C:Backend>=Detach<C>;
+}
 impl<B:Backend> BlockVariant<B> for Embed<B>{
 	fn embed(&self,input:Tensor<B,2,Int>,inputclasses:usize,inputencoding:u64)->Value<B>{
 		if !self.supports(inputencoding){return Value::unembedded(input,inputclasses,inputencoding)}
@@ -37,11 +42,6 @@ impl<B:Backend> BlockVariant<B> for Embed<B>{
 	}
 	fn supports(&self,encoding:u64)->bool{encoding==self.inputencoding}
 	type BlockWith<C:Backend>=Embed<C>;
-}
-impl<B:Backend> BlockVariant<B> for Detach<B>{
-	fn forward(&self,input:Value<B>)->Value<B>{input.detach()}
-	fn supports(&self,_encoding:u64)->bool{true}
-	type BlockWith<C:Backend>=Detach<C>;
 }
 impl<B:Backend> BlockVariant<B> for Identity<B>{
 	fn embed(&self,input:Tensor<B,2,Int>,inputclasses:usize,inputencoding:u64)->Value<B>{
@@ -81,7 +81,7 @@ impl<B:Backend> BlockVariant<B> for Relu<B>{
 	type BlockWith<C:Backend>=Relu<C>;
 }
 impl<B:Backend> BlockVariant<B> for Silu<B>{
-	fn forward(&self,input:Value<B>)->Value<B>{input.map(|input:Tensor<B,1>|activation::sigmoid(input.clone())*input,None)}
+	fn forward(&self,input:Value<B>)->Value<B>{input.map(|input:Tensor<B,1>|activation::silu(input),None)}
 	fn supports(&self,_encoding:u64)->bool{true}
 	type BlockWith<C:Backend>=Silu<C>;
 }
@@ -90,6 +90,7 @@ impl<B:Backend> BlockVariant<B> for Tanh<B>{
 	fn supports(&self,_encoding:u64)->bool{true}
 	type BlockWith<C:Backend>=Tanh<C>;
 }
+
 impl<B:Backend> Bias<B>{
 	/// get the number of features
 	pub fn get_features(&self)->usize{self.bias.dims()[0]}
@@ -107,6 +108,8 @@ impl<B:Backend> Conv2D<B>{
 	pub fn get_input_encoding(&self)->u64{self.inputencoding}
 	/// get the output encoding id
 	pub fn get_output_encoding(&self)->u64{self.outputencoding}
+	/// convert into the inner layer
+	pub fn into_inner(self)->Conv2d<B>{self.inner}
 	/// creates a new conv2d layer
 	pub fn new(inputchannels:usize,inputencoding:u64,kernel:[usize;2],outputchannels:usize,outputencoding:u64,stride:[usize;2])->Self{
 		Self{inner:Conv2dConfig::new([inputchannels,outputchannels],kernel).with_padding(PaddingConfig2d::Valid).with_stride(stride).init(&Default::default()),inputencoding,outputencoding}
