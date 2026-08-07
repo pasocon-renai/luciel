@@ -39,16 +39,16 @@ impl<B:Backend,V:BlockVariant<B>> BlockVariant<B> for Sequential<V>{
 	fn clear(&mut self){self.0.iter_mut().for_each(V::clear)}
 	fn detach_cache(&mut self){self.0.iter_mut().for_each(V::detach_cache)}
 	fn embed(&self,input:Tensor<B,2,Int>,inputclasses:usize,inputencoding:u64)->Value<B>{
-		if self.0.len()==0{return Value::unembedded(input,inputclasses,inputencoding)}
-		let x=self.0[0].embed(input,inputclasses,inputencoding);
+		let mut iter=self.0.iter().skip_while(|b|!b.supports(inputencoding));
+		let x=if let Some(b)=iter.next(){b.embed(input,inputclasses,inputencoding)}else{return Value::unembedded(input,inputclasses,inputencoding)};
 
-		self.0.iter().skip(1).fold(x,|x,b|b.forward(x))
+		iter.fold(x,|x,b|b.forward(x))
 	}
 	fn embed_mut(&mut self,input:Tensor<B,2,Int>,inputclasses:usize,inputencoding:u64)->Value<B>{
-		if self.0.len()==0{return Value::unembedded(input,inputclasses,inputencoding)}
-		let x=self.0[0].embed_mut(input,inputclasses,inputencoding);
+		let mut iter=self.0.iter_mut().skip_while(|b|!b.supports(inputencoding));
+		let x=if let Some(b)=iter.next(){b.embed_mut(input,inputclasses,inputencoding)}else{return Value::unembedded(input,inputclasses,inputencoding)};
 
-		self.0.iter_mut().skip(1).fold(x,|x,b|b.forward_mut(x))
+		iter.fold(x,|x,b|b.forward_mut(x))
 	}
 	fn forward(&self,x:Value<B>)->Value<B>{self.0.iter().fold(x,|x,b|b.forward(x))}
 	fn forward_mut(&mut self,x:Value<B>)->Value<B>{self.0.iter_mut().fold(x,|x,b|b.forward_mut(x))}
