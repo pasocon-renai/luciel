@@ -47,7 +47,6 @@ impl<'a,V:Any+DeserializeOwned+Send> Deserialize<'a> for Shared<V>{
 			if let Some(maphandle)=SHARE_MAP.get(){
 				maphandle.remove(&key.with_type::<ReserialFallback>());
 			}
-
 			primary=true;
 			put_global_layer(key,v.clone());
 		}).map(OnceCell::from).or_else(||{
@@ -234,7 +233,12 @@ impl<V:Any+Send+Serialize> Serialize for Shared<V>{
 
 		SHARE_MAP.get_or_init(Default::default).insert(self.key.with_type::<ReserialFallback>(),Box::new(fallback));
 		Serial{
-			inner:self.inner.get().filter(|_|self.primary).cloned(),
+			inner:self.inner.get().filter(|_|{
+				if self.primary{
+					dbg!(self.key);
+				}
+				self.primary
+			}).cloned(),
 			generation:self.key.generation,
 			lineage:self.key.lineage
 		}.serialize(serializer)
@@ -324,8 +328,10 @@ impl<V:Any+Send> Shared<V>{
 
 		match rmp_decode::from_read(reader){Err(e)=>Err(IOError::new(IOErrorKind::Other,e.to_string())),Ok(x)=>Ok(x)}
 	}
-	/// make this share a primary share of its key. A previous primary share should still exist, otherwise the inner layer will have been dropped and the method will panic. For correct map/visit behavior, exactly one primary share should be included with each model, so this shouldn't be used unless a strong reference to the layer is needed outside, or the original primary is going to be dropped early. Primary share status is preserved when cloning
+	/// make this share a primary share of its key.
 	pub fn make_primary(&mut self){self.primary=true}
+	/// make this share a secondary share of its key.
+	pub fn make_secondary(&mut self){self.primary=false}
 	/// create a new share from the inner layer. The result will be a 'primary' Shared reference that delegates to the inner module for mapping and visiting purposes, and its shares will be secondary shares referencing the same layer with the same key. For module map/visit methods to work correctly, exactly one primary share should be present per key per model. Primary share status is preserved when cloning
 	pub fn new(inner:V)->Self{
 		let inner=Arc::new(Mutex::new(inner));

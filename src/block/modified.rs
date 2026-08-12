@@ -168,6 +168,27 @@ impl<B:Backend,V:BlockVariant<B>> BlockVariant<B> for Undifferentiated<V>{
 	fn supports(&self,encoding:u64)->bool{self.inner_module().supports(encoding)}
 	type BlockWith<C:Backend>=Undifferentiated<V::BlockWith<C>>;
 }
+impl<V> Deref for Detached<V>{
+	fn deref(&self)->&V{self.inner()}
+	type Target=V;
+}
+impl<V> Deref for Only<V>{
+	fn deref(&self)->&V{self.inner()}
+	type Target=V;
+}
+impl<V> Deref for Residual<V>{
+	fn deref(&self)->&V{self.inner()}
+	type Target=V;
+}
+impl<V> DerefMut for Detached<V>{
+	fn deref_mut(&mut self)->&mut V{self.inner_mut()}
+}
+impl<V> DerefMut for Only<V>{
+	fn deref_mut(&mut self)->&mut V{self.inner_mut()}
+}
+impl<V> DerefMut for Residual<V>{
+	fn deref_mut(&mut self)->&mut V{self.inner_mut()}
+}
 impl<B:Backend,V:BlockVariant<B>> Module<B> for Adapt<V>{
 	fn collect_devices(&self,devices:Vec<B::Device>)->Vec<B::Device>{self.0.values().fold(devices,|acc,e|e.collect_devices(acc))}
 	fn fork(mut self,device:&B::Device)->Self{
@@ -288,6 +309,16 @@ impl<V> From<V> for Undifferentiated<V>{
 		Self{grad:Some(Box::new(inner)),no:OnceCell::new()}
 	}
 }
+impl<V> Detached<V>{
+	/// reference the inner value
+	pub fn inner(&self)->&V{&self.0}
+	/// reference the inner value
+	pub fn inner_mut(&mut self)->&mut V{&mut self.0}
+	/// convert into the inner value
+	pub fn into_inner(self)->V{self.0}
+	/// create a new residual
+	pub fn new(inner:V)->Self{Self(inner)}
+}
 impl<V> Only<V>{
 	/// get the only input encoding
 	pub fn get_input_encoding(&self)->u64{self.inputencoding}
@@ -312,6 +343,16 @@ impl<V> Only<V>{
 		self.set_output_encoding(encoding);
 		self
 	}
+}
+impl<V> Residual<V>{
+	/// reference the inner value
+	pub fn inner(&self)->&V{&self.0}
+	/// reference the inner value
+	pub fn inner_mut(&mut self)->&mut V{&mut self.0}
+	/// convert into the inner value
+	pub fn into_inner(self)->V{self.0}
+	/// create a new residual
+	pub fn new(inner:V)->Self{Self(inner)}
 }
 impl<V> Undifferentiated<V>{
 	fn _map<F:FnOnce(V)->V>(self,f:F)->Self{
@@ -379,4 +420,6 @@ use burn::{
 };
 use serde::{Deserialize,Deserializer,Serialize,Serializer};
 use super::{BlockVariant,Value};
-use std::{cell::OnceCell,collections::HashMap};
+use std::{
+	cell::OnceCell,collections::HashMap,ops::{Deref,DerefMut}
+};
