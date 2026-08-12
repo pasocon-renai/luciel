@@ -462,7 +462,6 @@ pub trait TrainVariant<B:Backend>:'static+DeserializeOwned+Module<B>+Serialize{
 	fn train(self,batch:usize,epochs:usize,learningrate:f32)->Self;
 }
 
-//pub use enumerate_model;
 use burn::{
 	backend::Autodiff,
 	data::dataloader::DataLoaderBuilder,

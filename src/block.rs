@@ -120,11 +120,11 @@ impl<B:Backend,V:BlockVariant<B>> Module<B> for RecursiveVariant<V>{
 	type Record=Self;
 }
 impl<V> Deref for RecursiveVariant<V>{
-	fn deref(&self)->&Self::Target{self.0.deref()}
+	fn deref(&self)->&Self::Target{self.inner_variant()}
 	type Target=V;
 }
 impl<V> DerefMut for RecursiveVariant<V>{
-	fn deref_mut(&mut self)->&mut Self::Target{self.0.deref_mut()}
+	fn deref_mut(&mut self)->&mut Self::Target{self.inner_variant_mut()}
 }
 impl<'a,B:Backend> Deserialize<'a> for Value<B>{
 	fn deserialize<D:Deserializer<'a>>(deserializer:D)->Result<Self,D::Error>{
@@ -195,8 +195,12 @@ impl<B:Backend> Sub<Value<B>> for Value<B>{
 }
 
 impl<V> RecursiveVariant<V>{
+	/// reference the inner value
+	pub fn inner_variant(&self)->&V{&self.0}
+	/// reference the inner value
+	pub fn inner_variant_mut(&mut self)->&mut V{&mut self.0}
 	/// convert into the inner value
-	pub fn into_inner(self)->V{*self.0}
+	pub fn into_inner_variant(self)->V{*self.0}
 }
 impl<B:Backend> Value<B>{ // TODO needs reshape and reshape map. probably should be refactored into another file at this point
 	/// adds to the loss
@@ -451,6 +455,8 @@ pub trait BlockVariant<B:Backend>:Any+DeserializeOwned+Module<B>+Serialize{
 	fn new_tanh()->Self where Tanh<B>:Into<Self>{Tanh::new().into()}
 	/// creata a new only block
 	fn only(self,inputencoding:u64,outputencoding:impl Into<Option<u64>>)->Self where RecursiveVariant<Only<Self>>:Into<Self>{RecursiveVariant::from(Only::new(self,inputencoding).with_output_encoding(outputencoding)).into()}
+	/// convert into a recursive variant
+	fn recursive_variant(self)->RecursiveVariant<Self>{RecursiveVariant::from(self)}
 	/// converts into a residual block
 	fn residual(self)->Self where RecursiveVariant<Residual<Self>>:Into<Self>{RecursiveVariant::from(Residual(self)).into()}
 	/// converts into a shuffle blocks

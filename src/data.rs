@@ -197,6 +197,11 @@ impl TokenSeqData{
 	pub fn data(&self)->&[u32]{&self.data[self.range.clone()]}
 	/// references the data
 	pub fn data_mut(&mut self)->&mut [u32]{Self::_data_mut(&mut self.data,&mut self.range)}
+	// TODO properly implement extend
+	pub fn extend(&mut self,data:impl IntoIterator<Item=u32>){
+		Self::_data_mut(&mut self.data,&mut self.range).extend(data);
+		self.range.end=self.data.len();
+	}
 	#[track_caller]
 	/// creates an empty token dataset
 	pub fn new(seq:usize)->Self{
