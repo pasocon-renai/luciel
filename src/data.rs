@@ -472,6 +472,7 @@ pub struct TokenSeqBatch<B:Backend>{data:Tensor<B,2,Int>}
 #[derive(Clone,Debug)]
 /// data item or set of fixed length token sequences, where each token's target is the next token
 pub struct TokenSeqData{data:Arc<FileVec<u32>>,range:Range<usize>,seq:usize}
+
 pub use intertense::burn_ml::{deserialize_float_tensor,deserialize_int_tensor,serialize_float_tensor,serialize_int_tensor};
 use burn::{
 	data::{dataset::Dataset,dataloader::batcher::Batcher},

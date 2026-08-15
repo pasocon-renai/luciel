@@ -50,6 +50,8 @@ impl<B:Backend,V:BlockVariant<B>> BlockVariant<B> for Model<B,V>{
 impl<B:Backend,V:BlockVariant<B>> Model<B,V>{
 	/// appends text to the prompt
 	pub fn absorb_text(&mut self,text:&str){self.prompt.extend(self.tokenizer.tokenize_str(text))}
+	/// appends text to the prompt
+	pub fn absorb_tokenized(&mut self,text:&[u32]){self.prompt.extend(text)}
 	/// reference the layers
 	pub fn blocks(&self)->&Vec<V>{&self.blocks.0}
 	/// reference the layers
@@ -136,6 +138,8 @@ impl<B:Backend,V:BlockVariant<B>> Model<B,V>{
 	pub fn set_prompt_encoding(&mut self,encoding:u64){
 		self.promptencoding=encoding;
 	}
+	/// set the tokenizer
+	pub fn set_tokenizer(&mut self,tokenizer:TokenDict){self.tokenizer=tokenizer}
 }
 impl<B:Backend,V:BlockVariant<B>> Module<B> for Model<B,V>{
 	fn collect_devices(&self,devices:Vec<B::Device>)->Vec<B::Device>{self.blocks.collect_devices(devices)}

@@ -445,6 +445,8 @@ pub trait BlockVariant<B:Backend>:Any+DeserializeOwned+Module<B>+Serialize{
 	fn new_embed(inputencoding:u64,inputdimension:usize,outputencoding:u64,outputdimension:usize)->Self where Embed<B>:Into<Self>{Embed::new(inputencoding,inputdimension,outputencoding,outputdimension).into()}
 	/// create a new identity block
 	fn new_identity()->Self where Identity<B>:Into<Self>{Identity::new().into()}
+	/// create a new layer norm block
+	fn new_layer_norm(dimension:usize,withbias:bool)->Self where LayerNorm<B>:Into<Self>{LayerNorm::new(dimension,withbias).into()}
 	/// create a new registry of primary shares
 	fn new_registry<I:IntoIterator<Item=Shared<Self>>>(shares:I)->Self where RecursiveVariant<Registry<Self>>:Into<Self>{RecursiveVariant::from(Registry(shares.into_iter().collect())).into()}
 	/// create a new relu block
