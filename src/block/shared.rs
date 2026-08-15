@@ -233,12 +233,7 @@ impl<V:Any+Send+Serialize> Serialize for Shared<V>{
 
 		SHARE_MAP.get_or_init(Default::default).insert(self.key.with_type::<ReserialFallback>(),Box::new(fallback));
 		Serial{
-			inner:self.inner.get().filter(|_|{
-				if self.primary{
-					dbg!(self.key);
-				}
-				self.primary
-			}).cloned(),
+			inner:self.inner.get().filter(|_|self.primary).cloned(),
 			generation:self.key.generation,
 			lineage:self.key.lineage
 		}.serialize(serializer)
@@ -264,6 +259,13 @@ impl<V:Any+Send> Clear<V>{
 	pub fn share(&self)->Self{Self(self.0.share())}
 	/// create another share with the same key, then swap it with self before returning, effectively taking the primary status of self and putting it in the returned value, leaving self non primary
 	pub fn share_swap(&mut self)->Self{Self(self.0.share_swap())}
+}
+impl<V> Deref for Update<V>{
+	fn deref(&self)->&Self::Target{&self.0}
+	type Target=Shared<V>;
+}
+impl<V> DerefMut for Update<V>{
+	fn deref_mut(&mut self)->&mut Self::Target{&mut self.0}
 }
 impl<V:Any+Send> Shared<V>{
 	fn _edit<F:FnOnce(&mut V)->Y,Y>(&self,f:F)->Y{
@@ -474,5 +476,5 @@ use rmp_serde::{decode as rmp_decode,encode as rmp_encode};
 use serde::{Deserialize,Deserializer,Serialize,Serializer,de::DeserializeOwned};
 use super::{BlockVariant,Value};
 use std::{
-	any::{Any,TypeId},cell::{Cell,OnceCell},fs::File,io::{BufReader,BufWriter,Error as IOError,ErrorKind as IOErrorKind,Result as IOResult},mem,path::Path,sync::{Arc,Mutex,OnceLock}
+	any::{Any,TypeId},cell::{Cell,OnceCell},fs::File,io::{BufReader,BufWriter,Error as IOError,ErrorKind as IOErrorKind,Result as IOResult},mem,ops::{Deref,DerefMut},path::Path,sync::{Arc,Mutex,OnceLock}
 };
